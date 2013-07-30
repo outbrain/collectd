@@ -54,9 +54,7 @@ static const char *config_keys[] =
 	"IgnoreSelected",
 	"ReportByDevice",
 	"ReportReserved",
-	"ReportInodes",
-	"ValuesAbsolute",
-	"ValuesPercentage"
+	"ReportInodes"
 };
 static int config_keys_num = STATIC_ARRAY_SIZE (config_keys);
 
@@ -66,8 +64,6 @@ static ignorelist_t *il_fstype = NULL;
 
 static _Bool by_device = 0;
 static _Bool report_inodes = 0;
-static _Bool values_absolute = 1;
-static _Bool values_percentage = 0;
 
 static int df_init (void)
 {
@@ -135,24 +131,7 @@ static int df_config (const char *key, const char *value)
 
 		return (0);
 	}
-	else if (strcasecmp (key, "ValuesAbsolute") == 0)
-	{
-		if (IS_TRUE (value))
-			values_absolute = 1;
-		else
-			values_absolute = 0;
 
-		return (0);
-	}
-	else if (strcasecmp (key, "ValuesPercentage") == 0)
-	{
-		if (IS_TRUE (value))
-			values_percentage = 1;
-		else
-			values_percentage = 0;
-
-		return (0);
-	}
 
 	return (-1);
 }
@@ -207,6 +186,8 @@ static int df_read (void)
 		uint64_t blk_free;
 		uint64_t blk_reserved;
 		uint64_t blk_used;
+		uint64_t blk_total;
+                uint64_t blk_percent;
 
 		if (ignorelist_match (il_device,
 					(mnt_ptr->spec_device != NULL)
@@ -231,7 +212,7 @@ static int df_read (void)
 		if (!statbuf.f_blocks)
 			continue;
 
-		if (by_device)
+		if (by_device) 
 		{
 			/* eg, /dev/hda1  -- strip off the "/dev/" */
 			if (strncmp (mnt_ptr->spec_device, "/dev/", strlen ("/dev/")) == 0)
@@ -239,13 +220,13 @@ static int df_read (void)
 			else
 				sstrncpy (disk_name, mnt_ptr->spec_device, sizeof (disk_name));
 
-			if (strlen(disk_name) < 1)
+			if (strlen(disk_name) < 1) 
 			{
-				DEBUG("df: no device name for mountpoint %s, skipping", mnt_ptr->dir);
+				DEBUG("df: no device name name for mountpoint %s, skipping", mnt_ptr->dir);
 				continue;
 			}
-		}
-		else
+		} 
+		else 
 		{
 			if (strcmp (mnt_ptr->dir, "/") == 0)
 			{
@@ -294,30 +275,19 @@ static int df_read (void)
 		blk_free     = (uint64_t) statbuf.f_bavail;
 		blk_reserved = (uint64_t) (statbuf.f_bfree - statbuf.f_bavail);
 		blk_used     = (uint64_t) (statbuf.f_blocks - statbuf.f_bfree);
+		blk_total    = (uint64_t) (statbuf.f_blocks);
+                blk_percent  = (uint64_t) (100*(statbuf.f_blocks - statbuf.f_bfree) / (statbuf.f_blocks));    
 
-		if (values_absolute)
-		{
-			df_submit_one (disk_name, "df_complex", "free",
+		df_submit_one (disk_name, "df_complex", "free",
 				(gauge_t) (blk_free * blocksize));
-			df_submit_one (disk_name, "df_complex", "reserved",
+                df_submit_one (disk_name, "df_complex", "total",
+                                (gauge_t) (blk_total * blocksize));
+		df_submit_one (disk_name, "df_complex", "reserved",
 				(gauge_t) (blk_reserved * blocksize));
-			df_submit_one (disk_name, "df_complex", "used",
+		df_submit_one (disk_name, "df_complex", "used",
 				(gauge_t) (blk_used * blocksize));
-		}
-
-		if (values_percentage)
-		{
-			if (statbuf.f_blocks > 0)
-				{
-				df_submit_one (disk_name, "percent_bytes", "free",
-					(gauge_t) ((float_t)(blk_free) / statbuf.f_blocks * 100));
-				df_submit_one (disk_name, "percent_bytes", "reserved",
-					(gauge_t) ((float_t)(blk_reserved) / statbuf.f_blocks * 100));
-				df_submit_one (disk_name, "percent_bytes", "used",
-					(gauge_t) ((float_t)(blk_used) / statbuf.f_blocks * 100));
-				}
-			else return (-1);
-		}
+		df_submit_one (disk_name, "df_complex", "percent",
+				(gauge_t) (blk_percent));
 
 		/* inode handling */
 		if (report_inodes)
@@ -335,29 +305,13 @@ static int df_read (void)
 			inode_free = (uint64_t) statbuf.f_favail;
 			inode_reserved = (uint64_t) (statbuf.f_ffree - statbuf.f_favail);
 			inode_used = (uint64_t) (statbuf.f_files - statbuf.f_ffree);
-
-			if (values_percentage)
-			{
-				if (statbuf.f_files > 0)
-				{
-					df_submit_one (disk_name, "percent_inodes", "free",
-						(gauge_t) ((float_t)(inode_free) / statbuf.f_files * 100));
-					df_submit_one (disk_name, "percent_inodes", "reserved",
-						(gauge_t) ((float_t)(inode_reserved) / statbuf.f_files * 100));
-					df_submit_one (disk_name, "percent_inodes", "used",
-						(gauge_t) ((float_t)(inode_used) / statbuf.f_files * 100));
-				}
-				else return (-1);
-			}
-			if (values_absolute)
-			{
-				df_submit_one (disk_name, "df_inodes", "free",
-						(gauge_t) inode_free);
-				df_submit_one (disk_name, "df_inodes", "reserved",
-						(gauge_t) inode_reserved);
-				df_submit_one (disk_name, "df_inodes", "used",
-						(gauge_t) inode_used);
-			}
+			
+			df_submit_one (disk_name, "df_inodes", "free",
+					(gauge_t) inode_free);
+			df_submit_one (disk_name, "df_inodes", "reserved",
+					(gauge_t) inode_reserved);
+			df_submit_one (disk_name, "df_inodes", "used",
+					(gauge_t) inode_used);
 		}
 	}
 
